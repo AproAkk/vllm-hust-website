@@ -467,6 +467,99 @@ test('SWE observations keep their fixed-window protocol and real MTP separate fr
             assert.equal(run.validation.prefix_cache_observed,true);
             assert.equal(run.validation.campaign_finished_ok,true);
             assert.ok(Object.keys(run.runtime_evidence.prefix_cache_counters).length);
+        } else if(p.evidence.benchmark_protocol.campaign==='qwen35-w8a8-tp1-swe-curves-20261014'){
+            const params=p.configuration.parameters;
+            assert.deepEqual(p.configuration.mods,['ascend-mtp-contract-2patch']);
+            assert.deepEqual(params.mods,['ascend-mtp-contract-2patch']);
+            assert.equal(params.quantization,'ascend');
+            assert.ok(String(params.weight_precision).startsWith('int8'));
+            assert.equal(params.mtp_draft_tokens,2);
+            assert.equal(params.max_num_seqs,16);
+            assert.equal(params.gpu_memory_utilization,0.95);
+            assert.equal(params.kv_cache_memory_bytes,20242376704);
+            assert.equal(params.max_num_batched_tokens,4096);
+            assert.equal(params.pipeline_parallel_size,1);
+            assert.equal(params.tensor_parallel_size,1);
+            assert.equal(p.configuration.hardware.accelerator_count,1);
+            assert.deepEqual(params.physical_devices,[0]);
+            assert.equal(p.load.session_rotation_depth,1);
+            assert.equal(run.client.session_rotation_depth,undefined);
+            assert.equal(p.load.concurrency_series,'swe-w8a8-tp1-20261014-mtp2');
+            assert.equal(params.qualification.concurrency,p.load.concurrency);
+            assert.equal(params.qualification.measurement_seconds,60);
+            assert.equal(run.qualification_run.concurrency,p.load.concurrency);
+            assert.equal(run.qualification_run.duration,60);
+            assert.equal(run.qualification_run.summary.failed_requests,0);
+            assert.equal(run.validation.protocol_qualification_run_id,run.qualification_run.run_id);
+            assert.equal(run.validation.protocol_qualification_passed,true);
+            assert.equal(run.validation.measured_seconds_matches_plan,true);
+            assert.equal(run.validation.prefix_cache_observed,true);
+            assert.equal(run.validation.campaign_finished_ok,true);
+            assert.ok(Object.keys(run.runtime_evidence.prefix_cache_counters).length);
+        } else if(p.evidence.benchmark_protocol.campaign==='qwen35-w8a8-gdn-tp2-swe-curves-20261016'){
+            const params=p.configuration.parameters;
+            assert.equal(p.cohort_id,'qwen35-35b-a3b-w8a8-gdn-tp2-2x910b3-full-decode-only-sweprefix-900s-v1'); // pragma: allowlist secret (public cohort id)
+            assert.deepEqual(p.configuration.mods,['ascend-mtp-contract-2patch+npugraph-ex-w8a16-shim']);
+            assert.deepEqual(params.mods,['ascend-mtp-contract-2patch+npugraph-ex-w8a16-shim']);
+            assert.equal(params.quantization,'ascend');
+            // 主配方仍是 int8; 差别只在 GDN linear_attn 三个投影走 W8A16。
+            assert.ok(String(params.weight_precision).startsWith('int8'));
+            assert.match(params.weight_precision,/W8A16/);
+            assert.match(String(params.activation_precision),/W8A16/);
+            assert.match(String(params.kv_cache_dtype),/^auto \(bf16/);
+            assert.equal(params.mtp_draft_tokens,2);
+            assert.equal(params.max_num_seqs,16);
+            assert.equal(params.gpu_memory_utilization,0.95);
+            assert.equal(params.kv_cache_memory_bytes,26038239232);
+            assert.equal(params.max_num_batched_tokens,4096);
+            assert.equal(params.pipeline_parallel_size,1);
+            assert.equal(params.tensor_parallel_size,2);
+            assert.equal(p.configuration.hardware.accelerator_count,2);
+            assert.equal(p.load.session_rotation_depth,1);
+            assert.equal(p.load.concurrency_series,'swe-w8a8-gdn-tp2-20261016-mtp2');
+            assert.equal(params.qualification.concurrency,p.load.concurrency);
+            assert.equal(params.qualification.measurement_seconds,60);
+            assert.equal(run.qualification_run.concurrency,p.load.concurrency);
+            assert.equal(run.qualification_run.duration,60);
+            assert.equal(run.qualification_run.summary.failed_requests,0);
+            assert.equal(run.validation.protocol_qualification_run_id,run.qualification_run.run_id);
+            assert.equal(run.validation.protocol_qualification_passed,true);
+            assert.equal(run.validation.measured_seconds_matches_plan,true);
+            assert.equal(run.validation.prefix_cache_observed,true);
+            assert.equal(run.validation.campaign_finished_ok,true);
+            assert.ok(Object.keys(run.runtime_evidence.prefix_cache_counters).length);
+            assert.equal(run.client.chips,2);
+        } else if(p.evidence.benchmark_protocol.campaign==='qwen35-w4a8-tp1-swe-curves-20261016'){
+            // W4A8 TP1 SWE 前缀复用曲线。本臂的要点有三处: 专家层权重位宽
+            // (int4)、据此显式设定的 KV 预算、以及本次测量固定使用的卡 7。
+            const params=p.configuration.parameters;
+            assert.deepEqual(p.configuration.mods,['ascend-mtp-contract-2patch','ascend-npugraph-ex-attr-shim']);
+            assert.deepEqual(params.mods,['ascend-mtp-contract-2patch','ascend-npugraph-ex-attr-shim']);
+            assert.equal(params.quantization,'ascend');
+            assert.ok(String(params.weight_precision).startsWith('int4'));
+            assert.equal(params.mtp_draft_tokens,2);
+            assert.equal(params.max_num_seqs,16);
+            assert.equal(params.gpu_memory_utilization,0.95);
+            assert.equal(params.kv_cache_memory_bytes,34953463839);
+            assert.equal(params.max_num_batched_tokens,4096);
+            assert.equal(params.pipeline_parallel_size,1);
+            assert.equal(params.tensor_parallel_size,1);
+            assert.equal(p.configuration.hardware.accelerator_count,1);
+            assert.deepEqual(params.physical_devices,[7]);
+            assert.equal(p.load.session_rotation_depth,1);
+            assert.equal(run.client.session_rotation_depth,undefined);
+            assert.equal(p.load.concurrency_series,'swe-w4a8-tp1-20261016-mtp2');
+            assert.equal(params.qualification.concurrency,p.load.concurrency);
+            assert.equal(params.qualification.measurement_seconds,60);
+            assert.equal(run.qualification_run.concurrency,p.load.concurrency);
+            assert.equal(run.qualification_run.duration,60);
+            assert.equal(run.qualification_run.summary.failed_requests,0);
+            assert.equal(run.validation.protocol_qualification_run_id,run.qualification_run.run_id);
+            assert.equal(run.validation.protocol_qualification_passed,true);
+            assert.equal(run.validation.measured_seconds_matches_plan,true);
+            assert.equal(run.validation.prefix_cache_observed,true);
+            assert.equal(run.validation.campaign_finished_ok,true);
+            assert.ok(Object.keys(run.runtime_evidence.prefix_cache_counters).length);
         } else if(p.evidence.benchmark_protocol.campaign==='qwen35-v018-native-text-only-20261001'){
             assert.deepEqual(p.configuration.mods,[]);
             assert.equal(p.configuration.official_baseline_id,data.official_baseline.id);
@@ -588,37 +681,6 @@ test('SWE observations keep their fixed-window protocol and real MTP separate fr
             assert.equal(p.evidence.activation_log.point_isolated,true);
             assert.equal(p.evidence.benchmark_protocol.prepared_workload_sha256,'dff300c473f0407681c379bdea846756509e436d7faa1539479c17acd2ed2d7b'); // pragma: allowlist secret
             assert.equal(p.evidence.benchmark_protocol.tokenizer_fingerprint,'319f580a2fc8d2ff1e1f48a26ea0c29eea35798d747e7188ca584e92c014bdf9'); // pragma: allowlist secret
-        } else if(p.evidence.benchmark_protocol.campaign==='qwen35-w4a8-tp1-swe-curves-20261016'){
-            // W4A8 TP1 SWE 前缀复用曲线。本臂的要点有三处: 专家层权重位宽
-            // (int4)、据此显式设定的 KV 预算、以及本次测量固定使用的卡 7。
-            const params=p.configuration.parameters;
-            assert.deepEqual(p.configuration.mods,['ascend-mtp-contract-2patch','ascend-npugraph-ex-attr-shim']);
-            assert.deepEqual(params.mods,['ascend-mtp-contract-2patch','ascend-npugraph-ex-attr-shim']);
-            assert.equal(params.quantization,'ascend');
-            assert.ok(String(params.weight_precision).startsWith('int4'));
-            assert.equal(params.mtp_draft_tokens,2);
-            assert.equal(params.max_num_seqs,16);
-            assert.equal(params.gpu_memory_utilization,0.95);
-            assert.equal(params.kv_cache_memory_bytes,34953463839);
-            assert.equal(params.max_num_batched_tokens,4096);
-            assert.equal(params.pipeline_parallel_size,1);
-            assert.equal(params.tensor_parallel_size,1);
-            assert.equal(p.configuration.hardware.accelerator_count,1);
-            assert.deepEqual(params.physical_devices,[7]);
-            assert.equal(p.load.session_rotation_depth,1);
-            assert.equal(run.client.session_rotation_depth,undefined);
-            assert.equal(p.load.concurrency_series,'swe-w4a8-tp1-20261016-mtp2');
-            assert.equal(params.qualification.concurrency,p.load.concurrency);
-            assert.equal(params.qualification.measurement_seconds,60);
-            assert.equal(run.qualification_run.concurrency,p.load.concurrency);
-            assert.equal(run.qualification_run.duration,60);
-            assert.equal(run.qualification_run.summary.failed_requests,0);
-            assert.equal(run.validation.protocol_qualification_run_id,run.qualification_run.run_id);
-            assert.equal(run.validation.protocol_qualification_passed,true);
-            assert.equal(run.validation.measured_seconds_matches_plan,true);
-            assert.equal(run.validation.prefix_cache_observed,true);
-            assert.equal(run.validation.campaign_finished_ok,true);
-            assert.ok(Object.keys(run.runtime_evidence.prefix_cache_counters).length);
         } else assert.equal(p.evidence.benchmark_protocol.campaign,'repaired-mtp2-separated-experts-c64');
         assert.equal(run.client.endpoint,undefined);
         assert.equal(run.client.server_metadata,undefined);
@@ -1103,19 +1165,33 @@ test('Qwen35 unified campaign remains on its series page without losing checkpoi
     const data=require('../data/leaderboard_frontier.json');
     const visible=model.visibleData(data);
     const allQwen35=visible.cohorts.filter(c=>c.model.label==='Qwen3.5-35B-A3B');
-    // 新增一条 qwen35 cohort 就要同步这个数: 上游 main 上是 5 (4×bf16 + 1×int8),
-    // 本分支加入 W4A8 TP1 后为 6。
-    assert.equal(allQwen35.length,6);
+    assert.equal(allQwen35.length,8);
     const cohorts=allQwen35.filter(c=>c.precision.id==='bf16-weights-compute-kv');
     assert.equal(cohorts.length,4);
     assert.equal(cohorts.filter(c=>c.workload.contract.presentation==='configuration-study').length,3);
     const w8a8=allQwen35.filter(c=>c.precision.id==='w8a8-int8-weights-compute-bf16-kv');
-    assert.equal(w8a8.length,1);
-    assert.equal(w8a8[0].id,'qwen35-35b-a3b-w8a8-tp2-2x910b3-full-decode-only-sweprefix-900s-v1');
-    assert.doesNotMatch(w8a8[0].id,/smoke|historical/i);
-    assert.doesNotMatch(w8a8[0].workload.label,/smoke|historical/i);
-    // W4A8 (专家层 int4) 是独立的 precision.id, 与既有 cohort 并存而不合并,
-    // 因此 [model, precision, workload, context] 唯一性键不冲突。
+    // W8A8 有两个并行规模不同的 cohort: TP2 (2 卡) 与 TP1 (单卡), 各有独立 workload.id。
+    assert.equal(w8a8.length,2);
+    assert.deepEqual(w8a8.map(c=>c.id).sort(),[
+        'qwen35-35b-a3b-w8a8-tp1-1x910b3-full-decode-only-sweprefix-900s-v1',
+        'qwen35-35b-a3b-w8a8-tp2-2x910b3-full-decode-only-sweprefix-900s-v1',
+    ]);
+    assert.equal(new Set(w8a8.map(c=>c.workload.id)).size,2);
+    for(const c of w8a8){
+        assert.doesNotMatch(c.id,/smoke|historical/i);
+        assert.doesNotMatch(c.workload.label,/smoke|historical/i);
+    }
+    // 新配方 (GDN linear_attn W8A16) 是第三个精度身份, 与上面对 BF16/W8A8 的计数并列。
+    const w8a8gdn=allQwen35.filter(c=>c.precision.id==='w8a8-int8-weights-compute-linearattn-w8a16-bf16-kv');
+    assert.equal(w8a8gdn.length,1);
+    assert.equal(w8a8gdn[0].id,'qwen35-35b-a3b-w8a8-gdn-tp2-2x910b3-full-decode-only-sweprefix-900s-v1'); // pragma: allowlist secret (public cohort id)
+    assert.doesNotMatch(w8a8gdn[0].id,/smoke|historical/i);
+    assert.match(w8a8gdn[0].precision.label,/W8A16/);
+    // 与已发布 W8A8 cohort 共用同一 workload 与同一 prepared workload, 只换配方。
+    assert.equal(w8a8gdn[0].workload.id,w8a8[0].workload.id);
+    assert.equal(w8a8gdn[0].workload.contract.prepared_workload_sha256,w8a8[0].workload.contract.prepared_workload_sha256);
+    assert.equal(w8a8gdn[0].context_tokens,w8a8[0].context_tokens);
+    assert.notEqual(w8a8gdn[0].precision.id,w8a8[0].precision.id);
     const w4a8=allQwen35.filter(c=>c.precision.id==='w4a8-expert-int4-weights-compute-bf16-kv');
     assert.equal(w4a8.length,1);
     assert.equal(w4a8[0].id,'qwen35-35b-a3b-w4a8-tp1-1x910b3-full-decode-only-sweprefix-900s-v1');

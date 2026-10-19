@@ -7,12 +7,551 @@ checkout. No private archives, prompts or model answers are consumed.
 import argparse
 import hashlib
 import json
+import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BS = "betterscale-dataset-validation-20261015"
 CURRENT = "betterscale-school-runtime-20261016"
 COMMIT = "2d90b460cf92645214bd6bc325bff0562c395ba6"  # pragma: allowlist secret
+
+
+def append_trajectory(root, solutions, datasets, records, sources):
+    """Optional complete finite-program receipts, distinct from task accuracy."""
+    path = "data/swe-smith-qwen35-tp2/report.json"
+    if not (root / path).exists():
+        return
+    raw = (root / path).read_bytes()
+    report = json.loads(raw)
+    expected = {
+        "model": "Qwen3.5-35B-A3B",
+        "precision": "BF16",
+        "hardware": "Ascend 910B2",
+        "parallel": "TP2",
+    }
+    if (
+        report["status"] != "PASS"
+        or report["cohort"] != expected
+        or report["quality"] is not None
+    ):
+        raise ValueError(
+            "Trajectory report must be a verified current-cohort performance result"
+        )
+    sources[path] = hashlib.sha256(raw).hexdigest()
+    solution = "request-throttling-controller"
+    solutions.append({"id": solution, "name": solution})
+    dataset = {
+        "id": "swe-smith-tranjactory",
+        "name": "SWE-smith-tranjactory",
+        "evidence_type": "replay",
+        "parts": [],
+    }
+    for aggregate in report["aggregate"]:
+        concurrency = aggregate["concurrency"]
+        selected = [r for r in report["records"] if r["concurrency"] == concurrency]
+        scores = {}
+        for strategy, sid in (("vllm", "native"), ("Our-Controller", solution)):
+            points = [r for r in selected if r["strategy"] == strategy]
+            if len(points) != aggregate["repetitions"] or not points:
+                raise ValueError("Missing paired trajectory repetitions")
+            scores[sid] = {
+                "value": statistics.median(r["programs_per_minute"] for r in points),
+                "unit": "programs/min",
+                "repetitions": len(points),
+                "speedup": 1
+                if sid == "native"
+                else aggregate["median_completion_rate_ratio"],
+            }
+        dataset["parts"].append(
+            {
+                "id": f"concurrency-{concurrency}",
+                "name": f"Concurrency {concurrency}",
+                "metric": "programs_per_minute",
+                "scores": scores,
+                "statuses": {},
+            }
+        )
+        for record in selected:
+            sid = "native" if record["strategy"] == "vllm" else solution
+            pair = next(
+                p
+                for p in report["paired_comparisons"]
+                if p["concurrency"] == concurrency and p["seed"] == record["seed"]
+            )
+            records.append(
+                {
+                    "id": f"swe-smith-{sid}-c{concurrency}-seed{record['seed']}",
+                    "dataset": dataset["id"],
+                    "solution": sid,
+                    "scope": f"c{concurrency}-seed{record['seed']}",
+                    "scope_label": f"{record['programs']} programs · C={concurrency} · seed={record['seed']}",
+                    "quality": [],
+                    "performance": record
+                    | {
+                        "completion_rate_ratio": 1
+                        if sid == "native"
+                        else pair["completion_rate_ratio"]
+                    },
+                    "configuration": report["cohort"]
+                    | {"packages": report["packages"], "backend_count": 1},
+                    "report": path,
+                    "protocol": {
+                        "evidence_type": "replay",
+                        "plan_sha256": report["plan_sha256"],
+                    },
+                    "limitations": report["limitations"],
+                }
+            )
+    datasets.append(dataset)
+
+
+def append_offline_window(root, solutions, datasets, records, sources):
+    path = "data/request-throttling-offline-window-20261017/report.json"
+    if not (root / path).exists():
+        return
+    raw = (root / path).read_bytes()
+    report = json.loads(raw)
+    assert report["status"] == "VERIFIED_WINDOW_PAIRS"
+    assert report["finite_makespan_claim"] is False and report["quality"] is None
+    assert report["protocol"]["arrival_mode"] == "offline-burst"
+    assert report["protocol"]["client_concurrency_limit"] is None
+    primary = [r for r in report["records"] if not r["order_repeat"]]
+    assert len(primary) == 3 and len({r["seed"] for r in primary}) == 3
+    ratio = statistics.median(
+        r["on"]["engine_output_tokens_per_second"]
+        / r["off"]["engine_output_tokens_per_second"]
+        for r in primary
+    )
+    assert ratio == report["aggregate"]["median_paired_output_rate_ratio"]
+    sources[path] = hashlib.sha256(raw).hexdigest()
+    on_id = "request-throttling-controller"
+    off_id = "native"
+    for sid, name in [
+        (off_id, "Native vLLM · Ascend"),
+        (on_id, "request-throttling-controller"),
+    ]:
+        if not any(s["id"] == sid for s in solutions):
+            solutions.append({"id": sid, "name": name})
+    scores = {}
+    for key, sid in [("off", off_id), ("on", on_id)]:
+        scores[sid] = {
+            "value": 0 if key == "off" else ratio - 1,
+            "unit": "relative_gain",
+            "output_tokens_per_second": statistics.median(
+                r[key]["engine_output_tokens_per_second"] for r in primary
+            ),
+            "repetitions": 3,
+            "speedup": 1 if key == "off" else ratio,
+        }
+    dataset_id = "swe-smith-tranjactory-offline-window"
+    datasets.append(
+        {
+            "id": dataset_id,
+            "name": "SWE-smith-tranjactory",
+            "evidence_type": "fixed-window-replay",
+            "paired_gains": [r["paired_output_rate_ratio"] - 1 for r in primary],
+            "parts": [
+                {
+                    "id": "offline96-180s-apc512m",
+                    "name": "离线批量回放",
+                    "name_en": "Offline batch replay",
+                    "metric": "output_throughput_gain",
+                    "scores": scores,
+                    "statuses": {},
+                }
+            ],
+        }
+    )
+    repeat_numbers = {r["seed"]: index + 1 for index, r in enumerate(primary)}
+    for record in report["records"]:
+        for key, sid in [("off", off_id), ("on", on_id)]:
+            point = record[key]
+            records.append(
+                {
+                    "id": f"offline-window-{record['run']}-{key}",
+                    "dataset": dataset_id,
+                    "solution": sid,
+                    "scope": "offline-window",
+                    "scope_label": f"重复{repeat_numbers[record['seed']]} · 3分钟"
+                    + (" · 顺序复核" if record["order_repeat"] else ""),
+                    "quality": [],
+                    "performance": point,
+                    "configuration": report["runtime_profile"],
+                    "report": path,
+                    "protocol": report["protocol"]
+                    | {
+                        "seed": record["seed"],
+                        "repeat_index": repeat_numbers[record["seed"]],
+                        "comparison_baseline": "Native vLLM through the same transport, scheduling disabled",
+                        "order": record["order"],
+                        "order_repeat": record["order_repeat"],
+                        "finite_makespan_claim": False,
+                    },
+                    "limitations": report["limitations"],
+                }
+            )
+
+
+def append_controller_dataset_profiles(root, solutions, datasets, records, sources):
+    """Add the MOD to existing dataset rows; preserve each baseline receipt."""
+    path = "data/request-throttling-dataset-matrix-20261018/frontierscience.json"
+    if not (root / path).exists():
+        return
+    raw = (root / path).read_bytes()
+    report = json.loads(raw)
+    assert report["status"] == "DATASET_PAIR_COMPLETE"
+    performance = report["performance"]
+    assert performance["state"] == "THREE_REPEAT_PERFORMANCE_COMPLETE"
+    sources[path] = hashlib.sha256(raw).hexdigest()
+    dataset_id = "frontierscience"
+    parts = []
+    for track, metric in [("olympiad", "success"), ("research", "score7")]:
+        scores = {}
+        for arm, sid in [
+            ("native", "native"),
+            ("controller", "request-throttling-controller"),
+        ]:
+            audit = report["quality_pair"]["arms"][arm]["summary"]["tracks"][track]
+            scores[sid] = {
+                "label": track.title(),
+                "correct": audit["successes"],
+                "total": audit["total"],
+                "value": audit["successes"] / audit["total"],
+                "audit": audit,
+            }
+        parts.append(
+            {
+                "id": track,
+                "name": track.title(),
+                "metric": metric,
+                "scores": scores,
+                "statuses": {},
+            }
+        )
+    existing = next(d for d in datasets if d["id"] == dataset_id)
+    for part in parts:
+        target = next(p for p in existing["parts"] if p["id"] == part["id"])
+        assert "request-throttling-controller" not in target["scores"]
+        target["scores"]["request-throttling-controller"] = part["scores"][
+            "request-throttling-controller"
+        ]
+    # Historical Native stays in the overview. The new matching Native remains
+    # a dated detail record so readers can inspect the actual paired baseline.
+    for arm, sid in [
+        ("native", "native"),
+        ("controller", "request-throttling-controller"),
+    ]:
+        points = [
+            r
+            for r in performance["records"]
+            if r["arm"] == arm and r["repetition"] != "warmup"
+        ]
+        assert len(points) == 3 and {r["repetition"] for r in points} == {1, 2, 3}
+        assert all(r["completed"] == 160 and r["failed"] == 0 for r in points)
+        aggregate = performance["aggregate"][arm]
+        for key, value in aggregate.items():
+            assert statistics.median(r[key] for r in points) == value
+        records.append(
+            {
+                "id": f"frontierscience-controller-20261018-{sid}",
+                "dataset": dataset_id,
+                "solution": sid,
+                "scope": "full-160",
+                "measured_at": "2026-10-18",
+                "configuration_label": "本轮配对基线"
+                if arm == "native"
+                else "本轮评测",
+                "configuration_label_en": "Matched baseline"
+                if arm == "native"
+                else "Current evaluation",
+                "quality": [p["scores"][sid] for p in parts],
+                "performance": dict(
+                    aggregate,
+                    completed=160,
+                    failed=0,
+                    num_prompts=160,
+                    repetitions=3,
+                    aggregation="median of three formal values per metric",
+                    formal_runs=points,
+                ),
+                "configuration": report["configuration"],
+                "report": path,
+                "protocol": {
+                    "quality": "One full task pass; Qwen substitute judge; unresolved retained in full denominator",
+                    "performance": "160 fixed prompts; output cap256; natural EOS; temperature0; request seed0; all arrive together; no client cap; one warmup plus three formal runs per arm",
+                    "source": "https://github.com/vLLM-HUST/vllm-hust-benchmark/tree/0ca30f4/reports/request-throttling-controller/dataset-matrix-20261018-r2/frontierscience",
+                    "quality_budget": report["quality_budget"],
+                },
+                "limitations": report["limitations"],
+            }
+        )
+
+
+def append_controller_gold_profile(root, datasets, records, sources):
+    """Use the existing Gold row and text/image detail format."""
+    path = "data/request-throttling-dataset-matrix-20261018/hle-gold.json"
+    if not (root / path).exists():
+        return
+    raw = (root / path).read_bytes()
+    report = json.loads(raw)
+    assert report["status"] == "DATASET_PAIR_COMPLETE"
+    assert report["quality_pair"]["pair_input_check"][
+        "all_contract_fields_equal_except_solver_base_url"
+    ]
+    sources[path] = hashlib.sha256(raw).hexdigest()
+    dataset = next(d for d in datasets if d["id"] == "hle-verified")
+    gold = next(p for p in dataset["parts"] if p["id"] == "gold")
+    audit = report["quality_pair"]["arms"]["controller"]["summary"]["tracks"]["gold"]
+    assert (
+        audit["total"] == 668 and "request-throttling-controller" not in gold["scores"]
+    )
+    gold["scores"]["request-throttling-controller"] = {
+        "label": "Gold",
+        "correct": audit["successes"],
+        "total": audit["total"],
+        "value": audit["accuracy"],
+        "audit": audit,
+    }
+    performance = report["performance"]
+    assert performance["state"] == "THREE_REPEAT_PERFORMANCE_COMPLETE"
+    for arm, sid in [
+        ("native", "native"),
+        ("controller", "request-throttling-controller"),
+    ]:
+        for modality, count in [("text", 200), ("image", 93)]:
+            points = [
+                r
+                for r in performance["records"]
+                if r["arm"] == arm
+                and r["modality"] == modality
+                and r["repetition"] != "warmup"
+            ]
+            assert len(points) == 3 and {r["repetition"] for r in points} == {1, 2, 3}
+            assert all(r["completed"] == count and r["failed"] == 0 for r in points)
+            aggregate = performance["aggregate"][modality][arm]
+            for key, value in aggregate.items():
+                assert statistics.median(r[key] for r in points) == value
+            quality = report["quality_pair"]["arms"][arm]["summary"]["groups"][
+                f"gold/{modality}"
+            ]
+            records.append(
+                {
+                    "id": f"hle-gold-controller-20261018-{sid}-{modality}",
+                    "dataset": "hle-verified",
+                    "solution": sid,
+                    "scope": f"gold-{modality}",
+                    "measured_at": "2026-10-18",
+                    "configuration_label": "本轮配对基线"
+                    if arm == "native"
+                    else "本轮评测",
+                    "configuration_label_en": "Matched baseline"
+                    if arm == "native"
+                    else "Current evaluation",
+                    "quality": [
+                        {
+                            "label": f"Gold · {modality}",
+                            "correct": quality["successes"],
+                            "total": quality["total"],
+                            "value": quality["accuracy"],
+                            "audit": quality,
+                        }
+                    ],
+                    "performance": dict(
+                        aggregate,
+                        completed=count,
+                        failed=0,
+                        num_prompts=count,
+                        repetitions=3,
+                        aggregation="median of three formal values per metric",
+                        formal_runs=points,
+                    ),
+                    "configuration": report["configuration"],
+                    "report": path,
+                    "protocol": {
+                        "quality": "One complete Gold668 pass; strict JSON Qwen substitute judge; all unresolved retained",
+                        "performance": f"Separate {modality} test: {count} prompts; output cap256; natural EOS; temperature0; seed0; rate inf; no client cap; one warmup plus three formal runs per arm",
+                        "source": "https://github.com/vLLM-HUST/vllm-hust-benchmark/tree/1d1a287/reports/request-throttling-controller/dataset-matrix-20261018-r2/hle-gold",
+                        "quality_budget": report["quality_budget"],
+                    },
+                    "limitations": report["limitations"],
+                }
+            )
+
+
+def append_controller_revision_profile(root, datasets, records, sources):
+    """Use the existing Revision row and text/image detail format."""
+    path = "data/request-throttling-dataset-matrix-20261018/hle-revision.json"
+    if not (root / path).exists():
+        return
+    raw = (root / path).read_bytes()
+    report = json.loads(raw)
+    assert report["status"] == "DATASET_PAIR_COMPLETE"
+    assert report["quality_pair"]["pair_input_check"][
+        "all_contract_fields_equal_except_solver_base_url"
+    ]
+    sources[path] = hashlib.sha256(raw).hexdigest()
+    dataset = next(d for d in datasets if d["id"] == "hle-verified")
+    revision = next(p for p in dataset["parts"] if p["id"] == "revision")
+    audit = report["quality_pair"]["arms"]["controller"]["summary"]["tracks"][
+        "revision"
+    ]
+    assert (
+        audit["total"] == 1143
+        and "request-throttling-controller" not in revision["scores"]
+    )
+    revision["scores"]["request-throttling-controller"] = {
+        "label": "Revision",
+        "correct": audit["successes"],
+        "total": audit["total"],
+        "value": audit["accuracy"],
+        "audit": audit,
+    }
+    performance = report["performance"]
+    assert performance["state"] == "THREE_REPEAT_PERFORMANCE_COMPLETE"
+    for arm, sid in [
+        ("native", "native"),
+        ("controller", "request-throttling-controller"),
+    ]:
+        for modality, count in [("text", 200), ("image", 118)]:
+            points = [
+                r
+                for r in performance["records"]
+                if r["arm"] == arm
+                and r["modality"] == modality
+                and r["repetition"] != "warmup"
+            ]
+            assert len(points) == 3 and {r["repetition"] for r in points} == {1, 2, 3}
+            assert all(r["completed"] == count and r["failed"] == 0 for r in points)
+            aggregate = performance["aggregate"][modality][arm]
+            for key, value in aggregate.items():
+                assert statistics.median(r[key] for r in points) == value
+            quality = report["quality_pair"]["arms"][arm]["summary"]["groups"][
+                f"revision/{modality}"
+            ]
+            records.append(
+                {
+                    "id": f"hle-revision-controller-20261018-{sid}-{modality}",
+                    "dataset": "hle-verified",
+                    "solution": sid,
+                    "scope": f"revision-{modality}",
+                    "measured_at": "2026-10-18",
+                    "configuration_label": "本轮配对基线"
+                    if arm == "native"
+                    else "本轮评测",
+                    "configuration_label_en": "Matched baseline"
+                    if arm == "native"
+                    else "Current evaluation",
+                    "quality": [
+                        {
+                            "label": f"Revision · {modality}",
+                            "correct": quality["successes"],
+                            "total": quality["total"],
+                            "value": quality["accuracy"],
+                            "audit": quality,
+                        }
+                    ],
+                    "performance": dict(
+                        aggregate,
+                        completed=count,
+                        failed=0,
+                        num_prompts=count,
+                        repetitions=3,
+                        aggregation="median of three formal values per metric",
+                        formal_runs=points,
+                    ),
+                    "configuration": report["configuration"],
+                    "report": path,
+                    "protocol": {
+                        "quality": "One complete Revision1143 pass; strict JSON Qwen substitute judge; all unresolved retained",
+                        "performance": f"Separate {modality} test: {count} prompts; output cap256; natural EOS; temperature0; seed0; rate inf; no client cap; one warmup plus three formal runs per arm",
+                        "source": "https://github.com/vLLM-HUST/vllm-hust-benchmark/tree/36fc645/reports/request-throttling-controller/dataset-matrix-20261018-r3/hle-revision",
+                        "quality_budget": report["quality_budget"],
+                    },
+                    "limitations": report["limitations"],
+                }
+            )
+
+
+def append_controller_mmlu_profile(root, datasets, records, sources):
+    """Append the dated matched pair to the existing MMLU row and details."""
+    path = "data/request-throttling-dataset-matrix-20261018/mmlu-pro.json"
+    if not (root / path).exists():
+        return
+    raw = (root / path).read_bytes()
+    report = json.loads(raw)
+    assert report["status"] == "DATASET_PAIR_COMPLETE"
+    pair = report["quality_pair"]
+    assert all(pair["pair_input_check"].values())
+    sources[path] = hashlib.sha256(raw).hexdigest()
+    dataset = next(d for d in datasets if d["id"] == "mmlu-pro")
+    part = next(p for p in dataset["parts"] if p["id"] == "test")
+    audit = pair["arms"]["controller"]["summary"]
+    assert (
+        audit["cases"] == 12032
+        and "request-throttling-controller" not in part["scores"]
+    )
+
+    def quality(value):
+        return {
+            "label": "Test",
+            "correct": value["correct"],
+            "total": value["cases"],
+            "value": value["accuracy"],
+            "audit": value,
+        }
+
+    part["scores"]["request-throttling-controller"] = quality(audit)
+    performance = report["performance"]
+    assert performance["state"] == "THREE_REPEAT_PERFORMANCE_COMPLETE"
+    for arm, sid in [
+        ("native", "native"),
+        ("controller", "request-throttling-controller"),
+    ]:
+        points = [
+            r
+            for r in performance["records"]
+            if r["arm"] == arm and r["repetition"] != "warmup"
+        ]
+        assert len(points) == 3 and {r["repetition"] for r in points} == {1, 2, 3}
+        assert all(r["completed"] == 200 and r["failed"] == 0 for r in points)
+        aggregate = performance["aggregate"][arm]
+        for key, value in aggregate.items():
+            assert statistics.median(r[key] for r in points) == value
+        records.append(
+            {
+                "id": f"mmlu-pro-controller-20261018-{sid}",
+                "dataset": "mmlu-pro",
+                "solution": sid,
+                "scope": "test-200",
+                "measured_at": "2026-10-18",
+                "configuration_label": "本轮配对基线"
+                if arm == "native"
+                else "本轮评测",
+                "configuration_label_en": "Matched baseline"
+                if arm == "native"
+                else "Current evaluation",
+                "quality": [quality(pair["arms"][arm]["summary"])],
+                "performance": dict(
+                    aggregate,
+                    completed=200,
+                    failed=0,
+                    num_prompts=200,
+                    repetitions=3,
+                    aggregation="median of three formal values per metric",
+                    formal_runs=points,
+                ),
+                "configuration": report["configuration"],
+                "report": path,
+                "protocol": {
+                    "quality": "One complete12032 pass;5shot/max2048/client16; invalid answers and truncations retained",
+                    "performance": "Separate200 prompts; outputcap256/naturalEOS/temp0/seed0/rateinf/no client cap; one warmup plus three formal runs each arm",
+                    "source": "https://github.com/vLLM-HUST/vllm-hust-benchmark/tree/4b3f318/reports/request-throttling-controller/dataset-matrix-20261018-r3/mmlu-pro",
+                    "quality_retention": pair["quality_retention"],
+                    "quality_retention_budget": pair["quality_retention_budget"],
+                },
+                "limitations": report["boundaries"],
+            }
+        )
 
 
 def build(root=ROOT):
@@ -271,6 +810,12 @@ def build(root=ROOT):
             },
             school["limitations"],
         )
+    append_trajectory(root, solutions, datasets, records, sources)
+    append_offline_window(root, solutions, datasets, records, sources)
+    append_controller_dataset_profiles(root, solutions, datasets, records, sources)
+    append_controller_gold_profile(root, datasets, records, sources)
+    append_controller_mmlu_profile(root, datasets, records, sources)
+    append_controller_revision_profile(root, datasets, records, sources)
     return {
         "schema": 1,
         "cohort": {
