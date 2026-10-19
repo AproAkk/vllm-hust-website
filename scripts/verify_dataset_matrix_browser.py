@@ -31,8 +31,23 @@ def main():
             page.on("pageerror", lambda error, errors=errors: errors.append(str(error)))
             page.goto(args.url + "/dataset-matrix-v1.html")
             page.locator(".matrix-overview").wait_for()
-            expect(page.locator(".matrix-overview tbody tr")).to_have_count(5)
-            assert "79.88%" in page.locator(".matrix-overview").inner_text()
+            expect(page.locator(".matrix-overview tbody tr")).to_have_count(6)
+            expect(page.locator("#matrix-table table")).to_have_count(1)
+            assert "+91.7%" in page.locator(".matrix-overview").inner_text()
+            assert "79.70%" in page.locator(".matrix-overview").inner_text()
+            expect(
+                page.locator(".matrix-profile-section, .matrix-replay-section")
+            ).to_have_count(0)
+            for value in [
+                "57.00%",
+                "58.00%",
+                "8.33%",
+                "6.67%",
+                "23.80%",
+                "79.78%",
+                "26.95%",
+            ]:
+                assert value in page.locator(".matrix-overview").inner_text()
             snapshot = page.request.get(
                 args.url + "/data/dataset-matrix-v1.json"
             ).json()
@@ -57,11 +72,13 @@ def main():
                 path=str(args.output / f"overview-{width}-{lang}.png"), full_page=True
             )
             page.locator('[data-sort="betterscale"]').click()
-            assert "25.15%" in page.locator(".matrix-overview").inner_text()
-            assert "28.00%" in page.locator(".matrix-overview").inner_text()
+            assert "25.90%" in page.locator(".matrix-overview").inner_text()
+            assert "27.65%" in page.locator(".matrix-overview").inner_text()
             page.locator('.matrix-dataset[href="#mmlu-pro"]').click()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(4)
-            assert "624.82" in page.locator(".matrix-detail").inner_text()
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(6)
+            assert "631.59" in page.locator(".matrix-detail").inner_text()
+            for value in ["360.53", "337.20", "2026-10-18"]:
+                assert value in page.locator(".matrix-detail").inner_text()
             page.locator('[data-sort="throughput"]').click()
             page.locator('[data-sort="throughput"]').click()
             assert (
@@ -79,15 +96,15 @@ def main():
                 json.loads(saved.read_text())["record"]["performance"][
                     "output_throughput"
                 ]
-                == 624.8240870647068
+                == 631.588934632666
             )
             toggle.click()
             page.locator('[data-solution="native"]').uncheck()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(3)
-            page.locator("#langToggle").click()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(3)
-            page.locator("#matrix-reset").click()
             expect(page.locator(".matrix-detail .run-row")).to_have_count(4)
+            page.locator("#langToggle").click()
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(4)
+            page.locator("#matrix-reset").click()
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(6)
             page.screenshot(
                 path=str(args.output / f"detail-{width}-{lang}.png"), full_page=True
             )
@@ -100,22 +117,85 @@ def main():
                 == "ascending"
             )
             page.locator('.matrix-dataset[href="#frontierscience"]').first.click()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(3)
-            assert "922.46" in page.locator(".matrix-detail").inner_text()
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(5)
+            assert "906.25" in page.locator(".matrix-detail").inner_text()
             page.go_back()
             page.locator(".matrix-overview").wait_for()
             page.locator('.matrix-dataset[href="#hle-verified"]').first.click()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(10)
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(18)
             page.locator('[data-solution="native"]').uncheck()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(6)
-            assert "916.40" in page.locator(".matrix-detail").inner_text()
-            assert "460.18" in page.locator(".matrix-detail").inner_text()
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(10)
+            assert "875.67" in page.locator(".matrix-detail").inner_text()
+            assert "466.19" in page.locator(".matrix-detail").inner_text()
+            for value in ["327.04", "277.11", "368.90", "294.30", "2026-10-18"]:
+                assert value in page.locator(".matrix-detail").inner_text()
+            page.locator(
+                '[data-expand="hle-gold-controller-20261018-request-throttling-controller-text"]'
+            ).click()
+            page.locator(
+                '[data-expand="hle-revision-controller-20261018-request-throttling-controller-text"]'
+            ).click()
+            expect(page.locator(".matrix-detail thead th")).to_have_count(7)
+
             page.screenshot(
                 path=str(args.output / f"hle-{width}-{lang}.png"), full_page=True
             )
             page.reload()
             page.locator(".matrix-detail").wait_for()
-            expect(page.locator(".matrix-detail .run-row")).to_have_count(10)
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(18)
+            assert page.evaluate(
+                "document.documentElement.scrollWidth <= innerWidth + 1"
+            )
+            page.goto(
+                args.url
+                + "/dataset-matrix-v1.html#swe-smith-tranjactory-offline-window"
+            )
+            page.locator(
+                '[data-expand="offline-window-request-throttling-controller-short-20261017-r18-on"]'
+            ).wait_for()
+            expect(
+                page.locator(".matrix-detail tbody > tr:not(.run-detail)")
+            ).to_have_count(8)
+            assert "30.28" in page.locator(".matrix-detail").inner_text()
+            notes = " ".join(
+                page.locator("#matrix-table > p.runs-note").all_text_contents()
+            )
+            assert "512MiB" in notes and "+91.7%" in notes
+            assert "seed" not in page.locator(".matrix-detail").inner_text()
+            expect(page.locator(".matrix-detail thead th")).to_have_count(7)
+            page.locator(
+                '[data-expand="offline-window-request-throttling-controller-short-20261017-r18-on"]'
+            ).click()
+            assert page.locator(
+                "#evidence-offline-window-request-throttling-controller-short-20261017-r18-on"
+            ).is_visible()
+            page.screenshot(
+                path=str(args.output / f"offline-window-{width}-{lang}.png"),
+                full_page=True,
+            )
+            assert page.evaluate(
+                "document.documentElement.scrollWidth <= innerWidth + 1"
+            )
+            page.goto(
+                args.url + "/dataset-matrix-v1.html#frontierscience-controller-20261018"
+            )
+            expect(page.locator(".matrix-detail .run-row")).to_have_count(5)
+            for value in ["474.13", "432.14", "58.00%", "6.67%", "2026-10-18"]:
+                assert value in page.locator(".matrix-detail").inner_text()
+            toggle = page.locator(
+                '[data-expand="frontierscience-controller-20261018-request-throttling-controller"]'
+            )
+            toggle.click()
+            assert page.locator(
+                "#evidence-frontierscience-controller-20261018-request-throttling-controller"
+            ).is_visible()
+            assert "0.23.0" in page.locator(".run-detail:not([hidden])").inner_text()
+            toggle.click()
+            page.locator(".runs-table-scroll").evaluate("e => e.scrollLeft = 0")
+            page.screenshot(
+                path=str(args.output / f"controller-frontier-{width}-{lang}.png"),
+                full_page=True,
+            )
             assert page.evaluate(
                 "document.documentElement.scrollWidth <= innerWidth + 1"
             )

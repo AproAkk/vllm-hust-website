@@ -16,7 +16,7 @@ def test_primary_navigation_separates_publications_from_performance_data() -> No
     assert "label: 'navPerformance'" in SITE_JS
     assert (
         "pages: ['leaderboard', 'leaderboard-v2', 'dataset-validation', "
-        "'dataset-matrix-v1', 'serving-plan']" in SITE_JS
+        "'dataset-matrix-v1', 'capability-coverage', 'serving-plan']" in SITE_JS
     )
     assert (
         "['leaderboard-v2', './leaderboard-runs.html', 'navPerformanceCurves']"
@@ -97,7 +97,7 @@ def test_every_public_page_has_a_cache_safe_static_ecosystem_navigation_entry() 
         text = (ROOT / name).read_text(encoding="utf-8")
         assert 'id="nav-plugins"' in text, name
         assert 'href="./plugins.html">Ecosystem</a>' in text, name
-        assert "assets/site.js?v=dataset-matrix-20261015" in text, name
+        assert "assets/site.js?v=coverage-20261016" in text, name
     assert "page === 'plugins' ? ' nav-plugin-link'" in SITE_JS
 
 
@@ -119,10 +119,10 @@ def test_homepage_section_index_links_to_existing_primary_sections() -> None:
 
 
 def test_homepage_leads_with_typed_ecosystem_positioning() -> None:
-    assert "38 public MODs across 8 lifecycle phases" in HOME
+    assert "39 public MODs across 8 lifecycle phases" in HOME
     assert "Explore by phase, scenario, platform, and readiness" in HOME
     assert "activation and performance evidence stay separate" in HOME
-    assert "38 个公开 MOD，覆盖 8 个推理生命周期阶段" in HOME
+    assert "39 个公开 MOD，覆盖 8 个推理生命周期阶段" in HOME
     assert "按阶段、场景、平台和成熟度探索" in HOME
     assert "启用证据与性能证据分开呈现" in HOME
 
@@ -137,7 +137,7 @@ def test_shared_directory_footer_and_versions_shell_are_site_wide() -> None:
     assert 'class="site-nav"' in versions
     assert 'class="site-footer"' in versions
     assert "assets/site.css?v=benchmarks-ia-20261003" in versions
-    assert "assets/site.js?v=dataset-matrix-20261015" in versions
+    assert "assets/site.js?v=coverage-20261016" in versions
     assert "assets/versions.css?v=0.3.7" in versions
 
 
@@ -159,7 +159,7 @@ def test_all_public_pages_use_the_same_shared_shell_release() -> None:
     for name in pages:
         text = (ROOT / name).read_text(encoding="utf-8")
         assert "assets/site.css?v=benchmarks-ia-20261003" in text
-        assert "assets/site.js?v=dataset-matrix-20261015" in text
+        assert "assets/site.js?v=coverage-20261016" in text
         if name not in ("index.html", "versions.html"):
             assert "assets/subpages.css?v=site-structure-20260816" in text
 

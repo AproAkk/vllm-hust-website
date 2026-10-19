@@ -1194,7 +1194,7 @@ def test_shared_visual_styles_use_current_cache_key_and_non_negative_tracking() 
     ):
         text = (root / name).read_text(encoding="utf-8")
         assert "assets/site.css?v=benchmarks-ia-20261003" in text
-        assert "assets/site.js?v=dataset-matrix-20261015" in text
+        assert "assets/site.js?v=coverage-20261016" in text
 
 
 def test_homepage_uses_shared_ecosystem_visual_system() -> None:
@@ -1219,8 +1219,8 @@ def test_homepage_presents_a_verified_serving_ecosystem() -> None:
     html_text = (root / "index.html").read_text(encoding="utf-8")
     site_js = (root / "assets" / "site.js").read_text(encoding="utf-8")
 
-    assert "38 public MODs across 8 lifecycle phases" in html_text
-    assert "38 个公开 MOD，覆盖 8 个推理生命周期阶段" in html_text
+    assert "39 public MODs across 8 lifecycle phases" in html_text
+    assert "39 个公开 MOD，覆盖 8 个推理生命周期阶段" in html_text
     assert "Domestic-compute inference engine" in site_js
     assert "面向国产算力的推理引擎" in site_js
     assert 'class="plugin-path"' in html_text
@@ -2829,7 +2829,7 @@ def test_issues_page_exists_and_has_nav() -> None:
     assert "assets/issues-page.js?v=" in html_text
     assert "assets/site.css?v=benchmarks-ia-20261003" in html_text
     assert "assets/subpages.css?v=site-structure-20260816" in html_text
-    assert "assets/site.js?v=dataset-matrix-20261015" in html_text
+    assert "assets/site.js?v=coverage-20261016" in html_text
     assert "window.vllmHustIssuesDataUrl" in html_text
     assert "./data/issues.json" in html_text
     assert "navIssues: 'Issues'" in site_js
